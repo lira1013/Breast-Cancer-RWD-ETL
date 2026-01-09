@@ -1,52 +1,53 @@
 # Spatially-Informed Data Engineering for Breast Cancer RWD
 
-This repository documents an engineering-first approach to processing complex multi-modal data (mFISHseq & Clinical RWD) from the **PRJNA1190437** dataset. It focuses on resolving **Biomarker Discordance** through robust ETL pipelines and spatial-temporal alignment.
+This repository documents an engineering-first approach to processing complex multi-modal data (mFISHseq & Clinical RWD) from the **PRJNA1190437** dataset. 
 
----
-
-## Domain Background & Clinical Significance
-
-### 1. Addressing "Biomarker Discordance"
-Biomarker discordance (inconsistent HER2/ER/PR status across different tumor regions) is a major clinical pain point caused by **Intratumoral Heterogeneity**. 
-* **Engineering Goal:** Transition from binary "HER2+/-" classification to a continuous spatial variable: **HER2 Heterogeneity Score**, **Clone Proportion**, and **Immune Co-localization**.
-
-### 2. Strategic Value for ADC Therapy (e.g., T-DXd)
-Modern Antibody-Drug Conjugates (ADCs) like T-DXd leverage the **"Bystander Effect"**, where cytotoxic payloads kill neighboring HER2-negative cells. 
-* **Project Impact:** By mapping spatial distribution rather than just average expression, this pipeline helps identify "HER2-low" or heterogeneous patients who may still benefit from ADC treatment.
+The primary objective of this project is to **curate clean, model-ready datasets** from noisy Real-World Data (RWD) and develop a biology-driven feature engineering pipeline for biomarker discovery.
 
 ---
 
 ##  Data Engineering Workflow
 
-### 1. Clinical-First ETL (The "Precision" Strategy)
-* **Visual Verification:** Utilized a manual-to-automated curation flow (Excel-to-Python) to ensure 100% accuracy in drug-regimen alignment before genomic merging.
-* **Integrity Constraint:** Implemented strict matching protocols to ensure no samples were deleted during the complex 1-to-N (Patient-to-Sample) mapping.
+### 1. Patient Entity Resolution (Fingerprinting Logic)
+To resolve the lack of unified `Patient_ID` in RWD, I implemented a **Fingerprinting Algorithm** to reconstruct patient entities (derived from GSE181574):
+* **Fingerprint Fields**: Used a 6-dimensional vector: `[Sex, Age, Menopausal Status, Geo-Location, Provider, Tumor Type]`.
+* **Standardization**: Resolved inconsistent age strings and unified "missing" value representations.
+* **ID Assignment**: Generated unique `Inferred_Patient_ID` (e.g., P00001) to enable precise 1-to-N (Patient-to-Sample) mapping for spatial analysis.
 
-### 2. RWD Standardization & Temporal Logic
-* **Drug Normalization:** Resolved redundant trade names into generic pharmaceutical entities.
-* **Temporal Aggregation:** Developed a logic for cumulative treatment duration where specific dosing timestamps were unavailable in the RWD.
-* **Control Framework:** Integrated specific control samples (e.g., Patient 1 Sample 39 as a Positive Control; 12-individual pool as Negative Control) to establish a "Credible Backbone" for the experimental findings.
+### 2. Stratified Gene Filtering (Biology-Driven Feature Selection)
+I designed a tiered filtering strategy for TPM (Transcripts Per Million) data, specifically optimized for **Trastuzumab treatment & HER2-pathway** analysis:
 
-### 3. Spatial-Genomic Integration
-* **Prior-Knowledge Screening:** Designed a TPM filtering pipeline guided by immune infiltration markers (CD8, NK, PD-L1) and TME (Tumor Microenvironment) features.
+* **Tier 1: Prior Core Genes**: Force-retained key biomarkers (e.g., ERBB2, ESR1) with a lenient threshold (TPM > 0) to ensure zero loss of known clinical markers.
+* **Tier 2: HER2 Pathway Signaling**: For genes in the HER2 pathway (e.g., EGFR, PIK3CA, AKT1), implemented a sensitive threshold (TPM > 0.5 in ≥10% samples) to capture low-abundance regulatory signals.
+* **Tier 3: Discovery Set**: For non-prior genes, applied a strict threshold (TPM > 1 in ≥10% samples) to eliminate noise, followed by **Variance Ranking** to select the top 500 highly variable genes (HVGs) capturing inter-sample heterogeneity.
+* **Normalization**: Post-filtering, data underwent $log_2(TPM+1)$ transformation and Z-score normalization for downstream analysis.
 
----
-
-##  Engineering Lessons & Maturity (The "Pivot")
-
-Initially, a predictive model (PBMF) was implemented. However, it was **deprecated** based on the following engineering reflections:
-
-* **Avoiding "Mixed Population" Bias:** Without a clear experimental design and control arm, single-arm modeling on raw RWD carries a high risk of confounding variables. 
-* **Patient-Centric vs. Sample-Centric:** Modeling at the sample level incorrectly assumes independence, ignoring the spatial correlation within a single patient. 
-* **Industrial ROI:** In medical data engineering, the complexity of a model should not exceed the reliability of the underlying grouping logic. I pivoted to focus on **High-Fidelity Curation** over algorithmic complexity.
+### 3. Clinical-First ETL & Standardization
+* **Hybrid Curation**: Utilized an Excel-to-Python flow to ensure 100% accuracy in drug-regimen alignment.
+* **Temporal Logic**: Developed a logic for cumulative treatment duration (Duration Total) to handle the lack of granular dosing timestamps in RWD.
 
 ---
 
 ##  Project Structure
-* `/scripts`: TPM filtering and drug-mapping automation.
-* `/metadata`: Logic for treatment-based patient stratification and inclusion criteria.
-* `/docs`: Detailed notes on LCM (Laser Capture Microdissection) and WSI (Whole Slide Imaging) coordinate mapping.
+
+* **`/data`**: 
+    - `prjna1190437_clinical_cleaned.xlsx`: Master Table with cleaned clinical features and `Inferred_Patient_ID`.
+    - `Medication_Log_summary.xlsx`: Distribution of treatment cohorts and patient counts.
+* **`/notebooks`**: 
+    - `analysis_pipeline.ipynb`: Full implementation of the **Fingerprinting Logic** and the **Stratified Filtering Pipeline**.
+
+---
+
+##  Engineering Reflections & "The Pivot"
+
+Initially, predictive modeling was explored. However, the project shifted focus toward **High-Fidelity Data Curation** based on the following engineering insights:
+
+1. **Complexity vs. Validity**: Due to the inconsistent nature of PFS (Progression-Free Survival) and complex experimental designs in RWD, a "distribution-first" approach was taken.
+2. **Visualizing Cohorts**: Instead of forced modeling on noisy labels, I focused on visualizing patient-treatment distributions and exploring the behavior of filtered gene sets.
+3. **Biological Logic Over Algorithms**: The stratification logic (Prior vs. Pathway vs. Noise) provides more industrial value for drug response exploration than a "black-box" model on uncleaned data.
+
+---
 
 ##  Future Exploration
-* Implementation of **Virtual Control Arms** to resolve the lack of a control cohort in RWD.
-* Development of a "Spatial Heterogeneity Score" as a continuous feature for treatment response prediction.
+*probably implementation of **Virtual Control Arms** to resolve cohort imbalances
+* Refinement of the **Spatial Heterogeneity Score** as a continuous variable for ADC (e.g., T-DXd) response prediction.v
